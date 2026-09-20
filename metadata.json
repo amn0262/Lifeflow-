@@ -1,0 +1,6 @@
+{
+  "name": "LifeFlow",
+  "description": "Advanced Personal Productivity & Task Management Web App with multi-level planning, calendar, analytics, task updates, activity timeline, and multi-language support.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
