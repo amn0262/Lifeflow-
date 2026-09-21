@@ -1,15 +1,19 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
+import firebaseAppletConfig from '../../firebase-applet-config.json';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyC_CuuKmjsNyDoxu8kooMmp_8fYP5UEcPk',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'lifeflow-f4da3.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'lifeflow-f4da3',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'lifeflow-f4da3.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '935927739627',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:935927739627:web:5977fdb335bc1235a77aae',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseAppletConfig.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseAppletConfig.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseAppletConfig.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseAppletConfig.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseAppletConfig.appId,
 };
+
+export const firestoreDatabaseId: string =
+  import.meta.env.VITE_FIREBASE_DATABASE_ID || firebaseAppletConfig.firestoreDatabaseId || '(default)';
 
 export const isFirebaseConfigured: boolean = Boolean(
   firebaseConfig.apiKey &&
@@ -25,7 +29,9 @@ if (isFirebaseConfigured) {
   try {
     app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
+    // Initialize Firestore with the provisioned named database
+    db = getFirestore(app, firestoreDatabaseId);
+    console.info(`[LifeFlow Firebase] Connected successfully to project "${firebaseConfig.projectId}" (Database: "${firestoreDatabaseId}")`);
   } catch (error) {
     console.warn('[LifeFlow Firebase Init] Firebase configuration detected but failed to initialize. Falling back to Local/Demo mode:', error);
     app = null;
@@ -35,3 +41,4 @@ if (isFirebaseConfigured) {
 }
 
 export { app, auth, db };
+

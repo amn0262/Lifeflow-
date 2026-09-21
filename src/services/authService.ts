@@ -10,12 +10,13 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '../firebase/config';
 import { UserProfile } from '../types';
 import { DEMO_USER_PROFILE } from '../data/demo/seedData';
+import { sanitizeForSetDoc, sanitizeForUpdateDoc } from './taskService';
 
 const LOCAL_USER_KEY = 'lifeflow_user_profile';
 const LOCAL_AUTH_STATE_KEY = 'lifeflow_auth_state';
 
 // In local/demo mode, retrieve or persist the user
-function getLocalProfile(): UserProfile {
+export function getLocalProfile(): UserProfile {
   try {
     const raw = localStorage.getItem(LOCAL_USER_KEY);
     if (raw) return JSON.parse(raw);
@@ -25,7 +26,7 @@ function getLocalProfile(): UserProfile {
   return DEMO_USER_PROFILE;
 }
 
-function saveLocalProfile(profile: UserProfile): void {
+export function saveLocalProfile(profile: UserProfile): void {
   try {
     localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(profile));
   } catch (err) {
@@ -97,7 +98,7 @@ export async function registerWithEmail(
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await setDoc(doc(db, 'users', uid), newProfile);
+    await setDoc(doc(db, 'users', uid), sanitizeForSetDoc(newProfile));
     return newProfile;
   }
 
@@ -134,11 +135,18 @@ export async function logoutUser(): Promise<void> {
 
 export async function updateUserProfile(userId: string, updates: Partial<UserProfile>): Promise<UserProfile> {
   if (isFirebaseConfigured && db) {
-    const userDocRef = doc(db, 'users', userId);
-    await updateDoc(userDocRef, {
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    });
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      await updateDoc(
+        userDocRef,
+        sanitizeForUpdateDoc({
+          ...updates,
+          updatedAt: new Date().toISOString(),
+        })
+      );
+    } catch (err) {
+      console.error('Firestore update user profile error:', err);
+    }
   }
 
   const current = getLocalProfile();
@@ -181,7 +189,7 @@ export function subscribeToAuth(callback: (user: UserProfile | null) => void): (
           updatedAt: new Date().toISOString(),
         });
       } else {
-        callback(null);
+        callback(getLocalProfile());
       }
     });
   }

@@ -17,6 +17,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { PWAInstallButton } from '../pwa/PWAInstallButton';
 
 interface NavbarProps {
   onOpenQuickAdd: () => void;
@@ -118,6 +119,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden sm:inline">Happy Birthday!</span>
             </button>
           )}
+
+          {/* PWA Install Button */}
+          <PWAInstallButton compact />
 
           {/* Quick Add Button */}
           <Button

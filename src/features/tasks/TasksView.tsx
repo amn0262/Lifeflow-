@@ -6,7 +6,8 @@ import { Task, TaskPriority, TaskStatus } from '../../types';
 import { TaskCard } from './components/TaskCard';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { Plus, Search, Filter, ArrowUpDown, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { NewCategoryModal } from '../categories/NewCategoryModal';
+import { Plus, Search, Filter, ArrowUpDown, CheckCircle2, Clock, AlertCircle, FolderPlus } from 'lucide-react';
 
 interface TasksViewProps {
   onOpenQuickAdd: () => void;
@@ -36,6 +37,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [sortBy, setSortBy] = useState<SortOption>('deadline');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [localSearch, setLocalSearch] = useState('');
+  const [isNewCategoryModalOpen, setIsNewCategoryModalOpen] = useState(false);
 
   const todayStr = currentTime.toISOString().split('T')[0];
 
@@ -245,6 +247,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
             ))}
           </select>
 
+          {/* Add Category Quick Button */}
+          <button
+            type="button"
+            onClick={() => setIsNewCategoryModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100/70 dark:hover:bg-indigo-900/40 text-xs font-medium transition-colors cursor-pointer shrink-0"
+            title={language === 'ar' ? 'إضافة تصنيف جديد' : 'Add New Category'}
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+            <span>{language === 'ar' ? 'تصنيف +' : 'New Category +'}</span>
+          </button>
+
           {/* Priority Dropdown */}
           <select
             value={selectedPriority}
@@ -304,6 +317,15 @@ export const TasksView: React.FC<TasksViewProps> = ({
           onAction={onOpenNewTaskModal}
         />
       )}
+
+      {/* Category Creation Modal */}
+      <NewCategoryModal
+        isOpen={isNewCategoryModalOpen}
+        onClose={() => setIsNewCategoryModalOpen(false)}
+        onCategoryCreated={(newCat) => {
+          setSelectedCategory(newCat.id);
+        }}
+      />
     </div>
   );
 };

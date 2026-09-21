@@ -4,7 +4,7 @@ import { getTranslation, calculateAge, daysUntilBirthday, isBirthdayToday } from
 import { requestNotificationPermission } from '../../services/notificationService';
 import { Input, Select } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
-import { isFirebaseConfigured } from '../../firebase/config';
+import { isFirebaseConfigured, firestoreDatabaseId } from '../../firebase/config';
 import {
   User as UserIcon,
   Calendar,
@@ -19,7 +19,13 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
+  Wifi,
+  WifiOff,
+  HardDrive,
+  Download,
 } from 'lucide-react';
+import { useOnlineStatus } from '../../pwa/useOnlineStatus';
+import { PWAInstallButton } from '../../components/pwa/PWAInstallButton';
 
 interface ProfileSettingsViewProps {
   onOpenBirthdayModal: () => void;
@@ -32,6 +38,7 @@ export const ProfileSettingsView: React.FC<ProfileSettingsViewProps> = ({
 }) => {
   const {
     user,
+    tasks,
     language,
     theme,
     timeFormat,
@@ -50,6 +57,7 @@ export const ProfileSettingsView: React.FC<ProfileSettingsViewProps> = ({
   const [email, setEmail] = useState(user?.email || '');
   const [dob, setDob] = useState(user?.dateOfBirth || '1995-09-20');
   const [isSaving, setIsSaving] = useState(false);
+  const isOnline = useOnlineStatus();
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     'Notification' in window && Notification.permission === 'granted'
   );
@@ -310,11 +318,13 @@ export const ProfileSettingsView: React.FC<ProfileSettingsViewProps> = ({
           </span>
         </div>
 
-        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-          LifeFlow is architected with a decoupled Data Access Layer. In Demo Mode, all data is
-          persisted in fast local browser storage. When Firebase environment credentials are provided,
-          it automatically connects to Firebase Authentication and Google Cloud Firestore.
-        </p>
+        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
+          <p className="leading-relaxed">
+            {isFirebaseConfigured
+              ? `Connected to Google Cloud Firestore (Database: "${firestoreDatabaseId}"). Your tasks, categories, and progress logs synchronize seamlessly in real time.`
+              : 'In Demo Mode, all data is persisted in fast local browser storage. When Firebase environment credentials are provided, it automatically connects to Firebase Authentication and Google Cloud Firestore.'}
+          </p>
+        </div>
 
         <div className="flex items-center justify-between pt-2">
           <Button
@@ -329,6 +339,78 @@ export const ProfileSettingsView: React.FC<ProfileSettingsViewProps> = ({
           <Button variant="ghost" size="sm" onClick={logout} className="text-rose-500 hover:text-rose-600">
             Sign Out
           </Button>
+        </div>
+      </div>
+
+      {/* Offline Capability & Service Worker PWA Card */}
+      <div id="card-pwa-offline-settings" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400">
+              <HardDrive className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                Offline Capability & Service Worker
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                PWA caching enables seamless access even without an internet connection
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5 ${
+              isOnline
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+            }`}
+          >
+            {isOnline ? (
+              <>
+                <Wifi className="w-3.5 h-3.5" /> Online (Sync Active)
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3.5 h-3.5" /> Offline (Using Local Cache)
+              </>
+            )}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800">
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+              Cached Tasks
+            </span>
+            <span className="text-lg font-bold text-slate-900 dark:text-white">
+              {tasks.length} tasks
+            </span>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+              Instantly readable & editable offline
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800">
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+              Service Worker
+            </span>
+            <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4" /> Ready
+            </span>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+              HTML, JS, CSS, fonts precached
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800">
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+              PWA Install
+            </span>
+            <div className="mt-1">
+              <PWAInstallButton />
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -54,7 +54,7 @@ export const INITIAL_CATEGORIES: Category[] = [
 export const DEMO_USER_PROFILE: UserProfile = {
   id: 'demo-user-123',
   name: 'Aymen Bakkour',
-  email: 'aymen@lifeflow.app',
+  email: 'aymenbakkour@gmail.com',
   dateOfBirth: '1995-09-20', // today matches or easily observable!
   language: 'en',
   theme: 'system',

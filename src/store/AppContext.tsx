@@ -11,6 +11,7 @@ import {
   WeatherData,
 } from '../types';
 import {
+  getLocalProfile,
   loginWithEmail,
   logoutUser,
   registerWithEmail,
@@ -20,12 +21,15 @@ import {
 import {
   addTaskUpdate,
   completeTask,
+  createCategory,
   createTask,
   deleteTask,
   getCategories,
   getTasks,
   reopenTask,
   resetToSeedData,
+  subscribeToCategories,
+  subscribeToTasks,
   updateTask,
 } from '../services/taskService';
 import { fetchWeather } from '../services/weatherService';
@@ -53,6 +57,9 @@ interface AppContextType {
   setTemperatureUnit: (unit: TemperatureUnit) => void;
   addToast: (title: string, message?: string, type?: ToastMessage['type']) => void;
   removeToast: (id: string) => void;
+
+  // Category methods
+  addNewCategory: (data: { name: string; color?: string; icon?: string }) => Promise<Category>;
 
   // Task methods
   addNewTask: (data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'updates' | 'activity'>) => Promise<Task>;
@@ -128,31 +135,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Subscribe to auth state
-  useEffect(() => {
-    const unsubscribe = subscribeToAuth(async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        setLanguageState(currentUser.language || 'en');
-        setThemeState(currentUser.theme || 'system');
-        setTimeFormatState(currentUser.timeFormat || '24h');
-        setTemperatureUnitState(currentUser.temperatureUnit || 'celsius');
+  // Helper to ensure an active user is always available
+  const getActiveUser = (): UserProfile => {
+    if (user) return user;
+    const fallback = getLocalProfile();
+    setUser(fallback);
+    return fallback;
+  };
 
-        try {
-          const [fetchedTasks, fetchedCategories] = await Promise.all([
-            getTasks(currentUser.id),
-            getCategories(currentUser.id),
-          ]);
-          setTasks(fetchedTasks);
-          setCategories(fetchedCategories);
-        } catch (err) {
-          console.error('Error fetching user data:', err);
-        }
+  // Subscribe to auth state and live Firestore tasks/categories
+  useEffect(() => {
+    let unsubscribeTasks: (() => void) | null = null;
+    let unsubscribeCategories: (() => void) | null = null;
+
+    const unsubscribeAuth = subscribeToAuth(async (currentUser) => {
+      const activeUser = currentUser || getLocalProfile();
+      setUser(activeUser);
+
+      // Clean up previous listeners
+      if (unsubscribeTasks) {
+        unsubscribeTasks();
+        unsubscribeTasks = null;
+      }
+      if (unsubscribeCategories) {
+        unsubscribeCategories();
+        unsubscribeCategories = null;
+      }
+
+      if (activeUser) {
+        setLanguageState(activeUser.language || 'en');
+        setThemeState(activeUser.theme || 'system');
+        setTimeFormatState(activeUser.timeFormat || '24h');
+        setTemperatureUnitState(activeUser.temperatureUnit || 'celsius');
+
+        // Subscribe to live Firestore tasks
+        unsubscribeTasks = subscribeToTasks(activeUser.id, (updatedTasks) => {
+          setTasks(updatedTasks);
+        });
+
+        // Subscribe to live Firestore categories
+        unsubscribeCategories = subscribeToCategories(activeUser.id, (updatedCategories) => {
+          setCategories(updatedCategories);
+        });
       }
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeTasks) unsubscribeTasks();
+      if (unsubscribeCategories) unsubscribeCategories();
+    };
   }, []);
 
   // Weather fetch
@@ -185,77 +218,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Actions
   const setLanguage = async (lang: Language) => {
     setLanguageState(lang);
-    if (user) {
-      await updateUserProfile(user.id, { language: lang });
-    }
+    const activeUser = getActiveUser();
+    await updateUserProfile(activeUser.id, { language: lang });
   };
 
   const setTheme = async (thm: Theme) => {
     setThemeState(thm);
-    if (user) {
-      await updateUserProfile(user.id, { theme: thm });
-    }
+    const activeUser = getActiveUser();
+    await updateUserProfile(activeUser.id, { theme: thm });
   };
 
   const setTimeFormat = async (fmt: TimeFormat) => {
     setTimeFormatState(fmt);
-    if (user) {
-      await updateUserProfile(user.id, { timeFormat: fmt });
-    }
+    const activeUser = getActiveUser();
+    await updateUserProfile(activeUser.id, { timeFormat: fmt });
   };
 
   const setTemperatureUnit = async (unit: TemperatureUnit) => {
     setTemperatureUnitState(unit);
-    if (user) {
-      await updateUserProfile(user.id, { temperatureUnit: unit });
-    }
+    const activeUser = getActiveUser();
+    await updateUserProfile(activeUser.id, { temperatureUnit: unit });
+  };
+
+  const addNewCategory = async (data: { name: string; color?: string; icon?: string }) => {
+    const activeUser = getActiveUser();
+    const created = await createCategory(activeUser.id, data);
+    setCategories((prev) => [...prev, created]);
+    addToast(
+      language === 'ar' ? 'تم إنشاء التصنيف' : 'Category Created',
+      created.name,
+      'success'
+    );
+    return created;
   };
 
   const addNewTask = async (
     data: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'updates' | 'activity'>
   ) => {
-    if (!user) throw new Error('User not authenticated');
-    const created = await createTask(user.id, data);
+    const activeUser = getActiveUser();
+    const created = await createTask(activeUser.id, data);
     setTasks((prev) => [created, ...prev]);
     addToast('Task Created', created.title, 'success');
     return created;
   };
 
   const modifyTask = async (taskId: string, updates: Partial<Task>, desc?: string) => {
-    if (!user) throw new Error('User not authenticated');
-    const updated = await updateTask(user.id, taskId, updates, desc);
+    const activeUser = getActiveUser();
+    const updated = await updateTask(activeUser.id, taskId, updates, desc);
     setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
     addToast('Task Updated', updated.title, 'info');
     return updated;
   };
 
   const markTaskComplete = async (taskId: string, customCompletedAt?: string) => {
-    if (!user) throw new Error('User not authenticated');
-    const updated = await completeTask(user.id, taskId, customCompletedAt);
+    const activeUser = getActiveUser();
+    const updated = await completeTask(activeUser.id, taskId, customCompletedAt);
     setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
     addToast('Task Completed', `Great job on completing "${updated.title}"!`, 'success');
     return updated;
   };
 
   const markTaskReopen = async (taskId: string) => {
-    if (!user) throw new Error('User not authenticated');
-    const updated = await reopenTask(user.id, taskId);
+    const activeUser = getActiveUser();
+    const updated = await reopenTask(activeUser.id, taskId);
     setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
     addToast('Task Reopened', updated.title, 'info');
     return updated;
   };
 
   const removeTask = async (taskId: string) => {
-    if (!user) throw new Error('User not authenticated');
+    const activeUser = getActiveUser();
     const target = tasks.find((t) => t.id === taskId);
-    await deleteTask(user.id, taskId);
+    await deleteTask(activeUser.id, taskId);
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
     addToast('Task Deleted', target?.title || '', 'warning');
   };
 
   const appendTaskUpdate = async (taskId: string, content: string) => {
-    if (!user) throw new Error('User not authenticated');
-    const newUpdate = await addTaskUpdate(user.id, taskId, content);
+    const activeUser = getActiveUser();
+    const newUpdate = await addTaskUpdate(activeUser.id, taskId, content);
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id !== taskId) return t;
@@ -269,8 +310,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resetDemoTasks = () => {
-    if (!user) return;
-    const fresh = resetToSeedData(user.id);
+    const activeUser = getActiveUser();
+    const fresh = resetToSeedData(activeUser.id);
     setTasks(fresh);
     addToast('Demo Tasks Reset', 'Restored 20 sample tasks with fresh timestamps.', 'info');
   };
@@ -299,13 +340,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = async () => {
     await logoutUser();
-    setUser(null);
+    const fallback = getLocalProfile();
+    setUser(fallback);
     addToast('Signed Out', 'You have been safely logged out.', 'info');
   };
 
   const updateProfileData = async (updates: Partial<UserProfile>) => {
-    if (!user) return;
-    const updated = await updateUserProfile(user.id, updates);
+    const activeUser = getActiveUser();
+    const updated = await updateUserProfile(activeUser.id, updates);
     setUser(updated);
     addToast('Profile Updated', 'Your profile details have been saved.', 'success');
   };
@@ -331,6 +373,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTemperatureUnit,
         addToast,
         removeToast,
+        addNewCategory,
         addNewTask,
         modifyTask,
         markTaskComplete,

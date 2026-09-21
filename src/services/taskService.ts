@@ -8,10 +8,47 @@ import {
   query,
   orderBy,
   addDoc,
+  deleteField,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/config';
 import { Task, TaskActivity, TaskUpdate, Category, TaskStatus, ActivityType } from '../types';
 import { INITIAL_CATEGORIES, INITIAL_DEMO_TASKS } from '../data/demo/seedData';
+
+/**
+ * Strips all undefined fields recursively so Firestore setDoc / addDoc never throws:
+ * "Function setDoc() called with invalid data. Unsupported field value: undefined"
+ */
+export function sanitizeForSetDoc<T extends Record<string, any>>(data: T): Record<string, any> {
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      clean[key] = sanitizeForSetDoc(value);
+    } else {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
+/**
+ * In updateDoc, undefined fields are converted to deleteField() so Firestore deletes
+ * the attribute safely without throwing "Unsupported field value: undefined".
+ */
+export function sanitizeForUpdateDoc<T extends Record<string, any>>(data: T): Record<string, any> {
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) {
+      clean[key] = deleteField();
+    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      clean[key] = sanitizeForUpdateDoc(value);
+    } else {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
 
 const getTasksStorageKey = (userId: string) => `lifeflow_tasks_${userId || 'demo'}`;
 const getCategoriesStorageKey = (userId: string) => `lifeflow_categories_${userId || 'demo'}`;
@@ -75,6 +112,45 @@ export async function getTasks(userId: string): Promise<Task[]> {
   return readLocalTasks(userId);
 }
 
+export function subscribeToTasks(
+  userId: string,
+  onUpdate: (tasks: Task[]) => void,
+  onError?: (error: any) => void
+): () => void {
+  if (isFirebaseConfigured && db && userId) {
+    try {
+      const tasksRef = collection(db, 'users', userId, 'tasks');
+      const q = query(tasksRef, orderBy('createdAt', 'desc'));
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          const remoteTasks: Task[] = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Task));
+          if (remoteTasks.length > 0) {
+            writeLocalTasks(userId, remoteTasks);
+            onUpdate(remoteTasks);
+          } else {
+            // If remote collection is currently empty, load local tasks
+            const local = readLocalTasks(userId);
+            onUpdate(local);
+          }
+        },
+        (error) => {
+          console.warn('[LifeFlow TaskService] Tasks snapshot listener error:', error);
+          onError?.(error);
+          onUpdate(readLocalTasks(userId));
+        }
+      );
+    } catch (err) {
+      console.warn('[LifeFlow TaskService] Failed to establish tasks snapshot listener:', err);
+      onError?.(err);
+    }
+  }
+
+  // Local fallback
+  onUpdate(readLocalTasks(userId));
+  return () => {};
+}
+
 export async function getCategories(userId: string): Promise<Category[]> {
   if (isFirebaseConfigured && db && userId) {
     try {
@@ -90,6 +166,68 @@ export async function getCategories(userId: string): Promise<Category[]> {
     }
   }
   return readLocalCategories(userId);
+}
+
+export function subscribeToCategories(
+  userId: string,
+  onUpdate: (categories: Category[]) => void
+): () => void {
+  if (isFirebaseConfigured && db && userId) {
+    try {
+      const catRef = collection(db, 'users', userId, 'categories');
+      return onSnapshot(
+        catRef,
+        (snapshot) => {
+          const remoteCats: Category[] = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
+          if (remoteCats.length > 0) {
+            writeLocalCategories(userId, remoteCats);
+            onUpdate(remoteCats);
+          } else {
+            onUpdate(readLocalCategories(userId));
+          }
+        },
+        (error) => {
+          console.warn('[LifeFlow TaskService] Categories snapshot listener error:', error);
+          onUpdate(readLocalCategories(userId));
+        }
+      );
+    } catch (err) {
+      console.warn('[LifeFlow TaskService] Failed to establish categories listener:', err);
+    }
+  }
+
+  onUpdate(readLocalCategories(userId));
+  return () => {};
+}
+
+export async function createCategory(
+  userId: string,
+  data: { name: string; color?: string; icon?: string }
+): Promise<Category> {
+  const catId = `cat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+  const newCat: Category = {
+    id: catId,
+    name: data.name.trim(),
+    color: data.color || '#6366f1',
+    icon: data.icon || 'Folder',
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  if (isFirebaseConfigured && db && userId) {
+    try {
+      const catDocRef = doc(db, 'users', userId, 'categories', catId);
+      await setDoc(catDocRef, sanitizeForSetDoc(newCat));
+    } catch (err) {
+      console.error('Firestore create category error:', err);
+    }
+  }
+
+  const currentCats = readLocalCategories(userId);
+  const updated = [...currentCats, newCat];
+  writeLocalCategories(userId, updated);
+  return newCat;
 }
 
 export async function createTask(
@@ -119,9 +257,12 @@ export async function createTask(
   if (isFirebaseConfigured && db && userId) {
     try {
       const taskDocRef = doc(db, 'users', userId, 'tasks', taskId);
-      await setDoc(taskDocRef, newTask);
+      await setDoc(taskDocRef, sanitizeForSetDoc(newTask));
       // Activity subcollection
-      await addDoc(collection(db, 'users', userId, 'tasks', taskId, 'activity'), initialActivity);
+      await addDoc(
+        collection(db, 'users', userId, 'tasks', taskId, 'activity'),
+        sanitizeForSetDoc(initialActivity)
+      );
     } catch (err) {
       console.error('Firestore create task error:', err);
     }
@@ -171,12 +312,18 @@ export async function updateTask(
   if (isFirebaseConfigured && db && userId) {
     try {
       const taskDocRef = doc(db, 'users', userId, 'tasks', taskId);
-      await updateDoc(taskDocRef, {
-        ...updates,
-        updatedAt: now,
-      });
+      await updateDoc(
+        taskDocRef,
+        sanitizeForUpdateDoc({
+          ...updates,
+          updatedAt: now,
+        })
+      );
       if (newActivity) {
-        await addDoc(collection(db, 'users', userId, 'tasks', taskId, 'activity'), newActivity);
+        await addDoc(
+          collection(db, 'users', userId, 'tasks', taskId, 'activity'),
+          sanitizeForSetDoc(newActivity)
+        );
       }
     } catch (err) {
       console.error('Firestore update task error:', err);
@@ -271,7 +418,10 @@ export async function addTaskUpdate(
 
   if (isFirebaseConfigured && db && userId) {
     try {
-      await addDoc(collection(db, 'users', userId, 'tasks', taskId, 'updates'), newUpdate);
+      await addDoc(
+        collection(db, 'users', userId, 'tasks', taskId, 'updates'),
+        sanitizeForSetDoc(newUpdate)
+      );
     } catch (err) {
       console.error('Firestore add update error:', err);
     }

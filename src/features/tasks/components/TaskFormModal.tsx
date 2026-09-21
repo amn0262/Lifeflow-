@@ -5,6 +5,8 @@ import { Button } from '../../../components/ui/Button';
 import { useApp } from '../../../store/AppContext';
 import { getTranslation } from '../../../i18n';
 import { Task, TaskPriority, TaskRecurrence, TaskStatus } from '../../../types';
+import { NewCategoryModal } from '../../categories/NewCategoryModal';
+import { Plus, X } from 'lucide-react';
 
 interface TaskFormModalProps {
   isOpen: boolean;
@@ -28,12 +30,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   const [startTime, setStartTime] = useState('09:00');
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('18:00');
-  const [estimatedDuration, setEstimatedDuration] = useState('60');
+  const [estimatedDuration, setEstimatedDuration] = useState('');
   const [recurrence, setRecurrence] = useState<TaskRecurrence>('NONE');
   const [tagsInput, setTagsInput] = useState('');
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isNewCategoryModalOpen, setIsNewCategoryModalOpen] = useState(false);
 
   useEffect(() => {
     if (taskToEdit) {
@@ -42,7 +45,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
       setCategoryId(taskToEdit.categoryId);
       setPriority(taskToEdit.priority);
       setStatus(taskToEdit.status);
-      setEstimatedDuration(String(taskToEdit.estimatedDuration || 60));
+      setEstimatedDuration(taskToEdit.estimatedDuration ? String(taskToEdit.estimatedDuration) : '');
       setRecurrence(taskToEdit.recurrence || 'NONE');
       setTagsInput((taskToEdit.tags || []).join(', '));
       setReminderEnabled(taskToEdit.reminderEnabled);
@@ -65,17 +68,16 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
         setDueTime('18:00');
       }
     } else {
-      const todayStr = new Date().toISOString().split('T')[0];
       setTitle('');
       setDescription('');
       setCategoryId(categories[0]?.id || 'cat-work');
       setPriority('MEDIUM');
       setStatus('TODO');
-      setStartDate(todayStr);
+      setStartDate('');
       setStartTime('09:00');
-      setDueDate(todayStr);
+      setDueDate('');
       setDueTime('18:00');
-      setEstimatedDuration('60');
+      setEstimatedDuration('');
       setRecurrence('NONE');
       setTagsInput('');
       setReminderEnabled(false);
@@ -86,13 +88,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   const validate = () => {
     const errs: Record<string, string> = {};
     if (!title.trim()) {
-      errs.title = 'Title is required';
+      errs.title = language === 'ar' ? 'اسم المهمة مطلوب (الحقل الإجباري الوحيد)' : 'Task title is required';
     }
     if (startDate && dueDate) {
       const start = new Date(`${startDate}T${startTime}`);
       const due = new Date(`${dueDate}T${dueTime}`);
       if (due < start) {
-        errs.dueDate = 'Deadline cannot be earlier than start time';
+        errs.dueDate = language === 'ar' ? 'الموعد النهائي لا يمكن أن يكون قبل موعد البدء' : 'Deadline cannot be earlier than start time';
       }
     }
     setErrors(errs);
@@ -115,18 +117,20 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
         .filter(Boolean)
         .map((t) => (t.startsWith('#') ? t : `#${t}`));
 
+      const effectiveCategory = categoryId || categories[0]?.id || 'cat-work';
+
       if (taskToEdit) {
         await modifyTask(
           taskToEdit.id,
           {
             title: title.trim(),
             description: description.trim() || undefined,
-            categoryId: categoryId || categories[0]?.id || 'cat-work',
+            categoryId: effectiveCategory,
             priority,
             status,
             startAt,
             dueAt,
-            estimatedDuration: Number(estimatedDuration) || 0,
+            estimatedDuration: estimatedDuration ? Number(estimatedDuration) : undefined,
             recurrence,
             tags: formattedTags,
             reminderEnabled,
@@ -137,12 +141,12 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
         await addNewTask({
           title: title.trim(),
           description: description.trim() || undefined,
-          categoryId: categoryId || categories[0]?.id || 'cat-work',
+          categoryId: effectiveCategory,
           priority,
           status,
           startAt,
           dueAt,
-          estimatedDuration: Number(estimatedDuration) || 0,
+          estimatedDuration: estimatedDuration ? Number(estimatedDuration) : undefined,
           recurrence,
           tags: formattedTags,
           reminderEnabled,
@@ -152,7 +156,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
       onClose();
     } catch (err) {
       console.error(err);
-      setErrors({ form: 'Failed to save task. Please check your inputs.' });
+      setErrors({ form: language === 'ar' ? 'فشل حفظ المهمة. يرجى المحاولة ثانية.' : 'Failed to save task. Please check your inputs.' });
     } finally {
       setLoading(false);
     }
@@ -180,153 +184,239 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   ];
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={taskToEdit ? getTranslation(language, 'task_edit') : getTranslation(language, 'task_new')}
-      maxWidth="xl"
-    >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {errors.form && (
-          <div className="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-600 dark:text-rose-300">
-            {errors.form}
-          </div>
-        )}
-
-        <Input
-          label={getTranslation(language, 'task_title')}
-          placeholder={getTranslation(language, 'task_title_placeholder')}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          error={errors.title}
-          autoFocus
-        />
-
-        <Textarea
-          label={getTranslation(language, 'task_description')}
-          placeholder={getTranslation(language, 'task_description_placeholder')}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={3}
-        />
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Select
-            label={getTranslation(language, 'task_category')}
-            options={categoryOptions}
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-          />
-          <Select
-            label={getTranslation(language, 'task_priority')}
-            options={priorityOptions}
-            value={priority}
-            onChange={(e) => setPriority(e.target.value as TaskPriority)}
-          />
-          <Select
-            label={getTranslation(language, 'task_status')}
-            options={statusOptions}
-            value={status}
-            onChange={(e) => setStatus(e.target.value as TaskStatus)}
-          />
-        </div>
-
-        {/* Schedule grid */}
-        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
-                Start Schedule
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs p-2 text-slate-800 dark:text-slate-100"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-                <input
-                  type="time"
-                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs p-2 text-slate-800 dark:text-slate-100"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                />
-              </div>
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title={taskToEdit ? getTranslation(language, 'task_edit') : getTranslation(language, 'task_new')}
+        maxWidth="xl"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {errors.form && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-600 dark:text-rose-300">
+              {errors.form}
             </div>
+          )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
-                Deadline (Due)
+          {/* Title - ONLY MANDATORY FIELD */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                <span>{getTranslation(language, 'task_title')}</span>
+                <span className="text-rose-500 font-bold">*</span>
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs p-2 text-slate-800 dark:text-slate-100"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
-                <input
-                  type="time"
-                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs p-2 text-slate-800 dark:text-slate-100"
-                  value={dueTime}
-                  onChange={(e) => setDueTime(e.target.value)}
-                />
-              </div>
-              {errors.dueDate && (
-                <p className="text-[11px] text-rose-500 mt-1">{errors.dueDate}</p>
-              )}
+              <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md">
+                {language === 'ar' ? 'الحقل الإجباري الوحيد' : 'Only required field'}
+              </span>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
             <Input
-              label={getTranslation(language, 'task_estimated_duration')}
-              type="number"
-              min="0"
-              step="5"
-              value={estimatedDuration}
-              onChange={(e) => setEstimatedDuration(e.target.value)}
+              placeholder={getTranslation(language, 'task_title_placeholder')}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              error={errors.title}
+              autoFocus
+            />
+          </div>
+
+          {/* Description - Optional */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {getTranslation(language, 'task_description')}
+              </label>
+              <span className="text-[11px] text-slate-400">
+                {language === 'ar' ? 'اختياري' : 'Optional'}
+              </span>
+            </div>
+            <Textarea
+              placeholder={getTranslation(language, 'task_description_placeholder')}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          {/* Category, Priority, Status */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Category with New Category quick action */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {getTranslation(language, 'task_category')}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsNewCategoryModalOpen(true)}
+                  className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{language === 'ar' ? 'تصنيف جديد' : 'New'}</span>
+                </button>
+              </div>
+              <Select
+                options={categoryOptions}
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+              />
+            </div>
+
+            <Select
+              label={getTranslation(language, 'task_priority')}
+              options={priorityOptions}
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as TaskPriority)}
             />
             <Select
-              label={getTranslation(language, 'task_recurrence')}
-              options={recurrenceOptions}
-              value={recurrence}
-              onChange={(e) => setRecurrence(e.target.value as TaskRecurrence)}
+              label={getTranslation(language, 'task_status')}
+              options={statusOptions}
+              value={status}
+              onChange={(e) => setStatus(e.target.value as TaskStatus)}
             />
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Input
-            label={getTranslation(language, 'task_tags')}
-            placeholder="e.g. work, design, urgent"
-            value={tagsInput}
-            onChange={(e) => setTagsInput(e.target.value)}
-            helperText="Tags will automatically be formatted with #"
-          />
+          {/* Schedule section (Completely Optional) */}
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                {language === 'ar' ? 'الجدول الزمني والمواعيد' : 'Schedule & Deadlines'}
+              </span>
+              <span className="text-[11px] text-slate-400">
+                {language === 'ar' ? 'اختياري بالكامل' : 'Completely optional'}
+              </span>
+            </div>
 
-          <div className="flex items-center h-full pt-6">
-            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300 select-none">
-              <input
-                type="checkbox"
-                checked={reminderEnabled}
-                onChange={(e) => setReminderEnabled(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-700"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    {language === 'ar' ? 'تاريخ البدء' : 'Start Schedule'}
+                  </label>
+                  {startDate && (
+                    <button
+                      type="button"
+                      onClick={() => setStartDate('')}
+                      className="text-[10px] text-rose-500 hover:underline inline-flex items-center gap-0.5"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>{language === 'ar' ? 'مسح' : 'Clear'}</span>
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs p-2 text-slate-800 dark:text-slate-100"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                  <input
+                    type="time"
+                    disabled={!startDate}
+                    className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs p-2 text-slate-800 dark:text-slate-100 disabled:opacity-40"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    {language === 'ar' ? 'الموعد النهائي (Deadline)' : 'Deadline (Due)'}
+                  </label>
+                  {dueDate && (
+                    <button
+                      type="button"
+                      onClick={() => setDueDate('')}
+                      className="text-[10px] text-rose-500 hover:underline inline-flex items-center gap-0.5"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>{language === 'ar' ? 'مسح' : 'Clear'}</span>
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs p-2 text-slate-800 dark:text-slate-100"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                  />
+                  <input
+                    type="time"
+                    disabled={!dueDate}
+                    className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs p-2 text-slate-800 dark:text-slate-100 disabled:opacity-40"
+                    value={dueTime}
+                    onChange={(e) => setDueTime(e.target.value)}
+                  />
+                </div>
+                {errors.dueDate && (
+                  <p className="text-[11px] text-rose-500 mt-1">{errors.dueDate}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <Input
+                label={`${getTranslation(language, 'task_estimated_duration')} (${language === 'ar' ? 'اختياري' : 'Optional'})`}
+                type="number"
+                min="0"
+                step="5"
+                placeholder={language === 'ar' ? 'مثال: 30 دقيقة' : 'e.g. 30'}
+                value={estimatedDuration}
+                onChange={(e) => setEstimatedDuration(e.target.value)}
               />
-              <span>{getTranslation(language, 'task_reminder')}</span>
-            </label>
+              <Select
+                label={getTranslation(language, 'task_recurrence')}
+                options={recurrenceOptions}
+                value={recurrence}
+                onChange={(e) => setRecurrence(e.target.value as TaskRecurrence)}
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            {getTranslation(language, 'btn_cancel')}
-          </Button>
-          <Button type="submit" variant="primary" isLoading={loading}>
-            {taskToEdit ? getTranslation(language, 'task_save') : getTranslation(language, 'task_create_btn')}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+          {/* Tags and Reminder - Optional */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label={`${getTranslation(language, 'task_tags')} (${language === 'ar' ? 'اختياري' : 'Optional'})`}
+              placeholder="e.g. work, design, urgent"
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              helperText={language === 'ar' ? 'تضاف علامة # تلقائياً' : 'Tags will automatically be formatted with #'}
+            />
+
+            <div className="flex items-center h-full pt-6">
+              <label className="flex items-center gap-2.5 cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300 select-none">
+                <input
+                  type="checkbox"
+                  checked={reminderEnabled}
+                  onChange={(e) => setReminderEnabled(e.target.checked)}
+                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-700"
+                />
+                <span>{getTranslation(language, 'task_reminder')}</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              {getTranslation(language, 'btn_cancel')}
+            </Button>
+            <Button type="submit" variant="primary" isLoading={loading}>
+              {taskToEdit ? getTranslation(language, 'task_save') : getTranslation(language, 'task_create_btn')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Embedded New Category Modal */}
+      <NewCategoryModal
+        isOpen={isNewCategoryModalOpen}
+        onClose={() => setIsNewCategoryModalOpen(false)}
+        onCategoryCreated={(newCat) => {
+          setCategoryId(newCat.id);
+        }}
+      />
+    </>
   );
 };

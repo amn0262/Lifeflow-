@@ -19,6 +19,7 @@ import { GlobalSearchModal } from './features/search/GlobalSearchModal';
 import { BirthdayModal } from './features/profile/BirthdayModal';
 import { AuthModal } from './features/auth/AuthModal';
 import { ToastContainer } from './components/ui/ToastContainer';
+import { OfflineIndicator } from './components/pwa/OfflineIndicator';
 import { Task } from './types';
 import { isBirthdayToday } from './i18n';
 
@@ -206,6 +207,9 @@ const MainLayout: React.FC = () => {
 
       {/* Toast Notification Container */}
       <ToastContainer />
+
+      {/* Offline Connectivity Status Indicator */}
+      <OfflineIndicator />
     </div>
   );
 };
